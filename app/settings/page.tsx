@@ -53,7 +53,23 @@ export default function SettingsPage() {
   }, [router]);
 
   const saveSettings = useCallback(() => {
+    // Persist full site list (including productive sites) to localStorage
+    // so the Settings page can restore the complete list on next load.
     localStorage.setItem("taskguard_settings", JSON.stringify({ monitoredSites }));
+
+    // Sync ONLY distracting domains to the Chrome extension.
+    // content.js listens for this event and writes the array to
+    // chrome.storage.local under "distractingDomains", which is the key
+    // background.js reads via loadUserDomains() on every session start.
+    const distractingDomains = monitoredSites
+      .filter((s) => s.isDistraction)
+      .map((s) => s.domain);
+
+    window.dispatchEvent(
+      new CustomEvent("taskguard:updateDomains", {
+        detail: { domains: distractingDomains },
+      })
+    );
   }, [monitoredSites]);
 
   useEffect(() => {

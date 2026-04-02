@@ -1,3 +1,4 @@
+"use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
@@ -81,9 +82,13 @@ export default function SessionPage() {
     ? (extensionStatus?.tabSwitches ?? localTabSwitches)
     : localTabSwitches;
 
-  const offTaskTime = extensionReady
-    ? Math.floor((extensionStatus?.offTaskTime ?? 0) / 60)
-    : localOffTaskTime;
+  // Raw seconds — used for accurate rate calculation (never floor to minutes early)
+  const offTaskSeconds = extensionReady
+    ? (extensionStatus?.offTaskTime ?? 0)
+    : 0;
+
+  // Minutes — display only (shown in the UI as "Xm")
+  const offTaskTime = Math.floor(offTaskSeconds / 60);
 
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [userInitials, setUserInitials] = useState("U");
@@ -112,7 +117,7 @@ export default function SessionPage() {
   const [lastSession, setLastSession] = useState<{
     onTaskRate: number;
     tabSwitches: number;
-    offTaskMinutes: number;
+    offTaskSeconds: number; // raw seconds — display handles formatting
     duration: number;
   } | null>(null);
 
@@ -154,8 +159,8 @@ export default function SessionPage() {
           setLastSession({
             onTaskRate:     recent.onTaskRate ?? 0,
             tabSwitches:    recent.tabSwitches || 0,
-            offTaskMinutes: recent.offTaskTime || 0,
-            duration:       Math.floor((recent.duration || 0) / 60),
+            offTaskSeconds: (recent.offTaskTime || 0) * 60, // stored as minutes, restore to seconds
+            duration:       recent.duration || 0, // raw seconds — display logic handles formatting
           });
         }
       } catch { /* ignore */ }
@@ -222,16 +227,46 @@ export default function SessionPage() {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           setIsRunning(false);
-          // Tell extension session is over
+
+          // Signal extension to stop (async — summary arrives via taskguard:stopped)
+          if (extensionReady) {
+            const patchOnStop = (e: Event) => {
+              const summary = (e as CustomEvent).detail as {
+                tabSwitches:   number;
+                offTaskTime:   number;
+                promptCount:   number;
+                promptReturns: number;
+              } | null;
+
+              if (summary) {
+                const saved = JSON.parse(localStorage.getItem("taskguard_sessions") || "[]");
+                const last  = saved[saved.length - 1];
+                if (last) {
+                  const finalOffTaskSec = summary.offTaskTime;
+                  const finalOffTaskMin = Math.floor(finalOffTaskSec / 60);
+                  last.tabSwitches = summary.tabSwitches;
+                  last.offTaskTime = finalOffTaskMin;
+                  last.promptCount = summary.promptCount;
+                  last.onTaskRate  = Math.round(
+                    Math.max(0, 100 - (finalOffTaskSec / Math.max(1, duration * 60)) * 100)
+                  );
+                  localStorage.setItem("taskguard_sessions", JSON.stringify(saved));
+                }
+              }
+              window.removeEventListener("taskguard:stopped", patchOnStop);
+            };
+            window.addEventListener("taskguard:stopped", patchOnStop);
+          }
           extensionStop();
-          // Save to history
+
+          // Optimistic save with current polled values
           const sessions = JSON.parse(localStorage.getItem("taskguard_sessions") || "[]");
           sessions.push({
             date:       new Date().toISOString(),
             duration:   duration * 60,
-            onTaskRate: Math.round(Math.max(0, 100 - (offTaskTime / duration) * 100)),
+            onTaskRate: Math.round(Math.max(0, 100 - (offTaskSeconds / Math.max(1, duration * 60)) * 100)),
             tabSwitches,
-            offTaskTime,
+            offTaskTime, // minutes for display
             goal:       sessionGoal,
             mode,
           });
@@ -243,7 +278,7 @@ export default function SessionPage() {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [isRunning, duration, tabSwitches, offTaskTime, sessionGoal, mode, extensionStop]);
+  }, [isRunning, duration, tabSwitches, offTaskTime, sessionGoal, mode, extensionStop, extensionReady]);
 
   useEffect(() => {
     setMounted(true);
@@ -269,40 +304,120 @@ export default function SessionPage() {
     // Reset local fallback stats
     setLocalTabSwitches(0);
     setLocalOffTaskTime(0);
-    // Signal the extension — content.js forwards this to background.js
-    extensionStart();
-  }, [extensionStart]);
+    // Signal the extension with the current mode — content.js forwards this
+    // to background.js which stores it and uses it in handleTabSwitch.
+    // Zen mode: silent tracking, no overlay. Focus/Strict: overlay shown.
+    extensionStart(mode);
+  }, [extensionStart, mode]);
 
   /**
    * Toggles session on/off.
    * - If running: stops timer, saves session to localStorage, signals extension stop.
    * - If not running: shows goal prompt before starting.
+   *
+   * Gap-2 fix: when the extension is connected, background.js flushes the
+   * final dwell-time chunk asynchronously inside endSession(). The values
+   * in extensionStatus can therefore be stale by up to one polling cycle
+   * (2 s) at the moment the user clicks "End Session".
+   *
+   * Strategy: save the session immediately using the best values we have,
+   * then register a one-time "taskguard:stopped" listener. When content.js
+   * receives the END_SESSION response from background.js it fires that event
+   * with response.summary as detail — containing the post-flush accurate
+   * tabSwitches, offTaskTime, and promptCount. We then patch the last entry
+   * in localStorage with the corrected numbers.
    */
   const toggleSession = useCallback(() => {
     if (isRunning) {
       setIsRunning(false);
-      // Signal extension to stop tracking
-      extensionStop();
-      // Save completed session
+
+      const sessionDuration = duration * 60 - timeLeft; // elapsed seconds
+
+      // ── Optimistic save with current (possibly slightly stale) values ──
+      // Written immediately so the history page has data even if the
+      // extension summary never arrives (e.g. extension not installed).
       const sessions = JSON.parse(localStorage.getItem("taskguard_sessions") || "[]");
       sessions.push({
         date:       new Date().toISOString(),
-        duration:   duration * 60 - timeLeft,
-        onTaskRate: Math.round(Math.max(0, 100 - (offTaskTime / duration) * 100)),
+        duration:   sessionDuration,
+        // Rate uses raw seconds to avoid the precision loss from early
+        // conversion to minutes (e.g. 45s off-task would floor to 0m
+        // and give a misleading 100% rate).
+        onTaskRate: sessionDuration > 0
+          ? Math.round(Math.max(0, 100 - (offTaskSeconds / sessionDuration) * 100))
+          : 100,
         tabSwitches,
-        offTaskTime,
+        offTaskTime, // minutes — HistoryPage displays in minutes
         goal:       sessionGoal,
         mode,
       });
       localStorage.setItem("taskguard_sessions", JSON.stringify(sessions));
       setIsNewUser(false);
+
+      // Refresh the "Last Session" panel immediately — don't wait for a page reload
+      setLastSession({
+        onTaskRate:     sessions[sessions.length - 1].onTaskRate,
+        tabSwitches:    sessions[sessions.length - 1].tabSwitches,
+        offTaskSeconds: offTaskSeconds, // raw seconds available right now in scope
+        duration:       sessionDuration,
+      });
+
       setLocalTabSwitches(0);
       setLocalOffTaskTime(0);
       setTimeLeft(duration * 60);
+
+      // ── Patch with accurate final values when extension confirms stop ──
+      // content.js passes response.summary (from background.js endSession)
+      // as the event detail. summary.offTaskTime is in seconds; we convert
+      // to minutes to match the format used by HistoryPage.
+      if (extensionReady) {
+        const patchOnStop = (e: Event) => {
+          const summary = (e as CustomEvent).detail as {
+            tabSwitches:   number;
+            offTaskTime:   number; // seconds
+            promptCount:   number;
+            promptReturns: number;
+            duration:      number;
+          } | null;
+
+          if (summary) {
+            const saved = JSON.parse(localStorage.getItem("taskguard_sessions") || "[]");
+            const last  = saved[saved.length - 1];
+            if (last) {
+              const finalOffTaskSec = summary.offTaskTime; // raw seconds from background.js
+              const finalOffTaskMin = Math.floor(finalOffTaskSec / 60);
+              last.tabSwitches = summary.tabSwitches;
+              last.offTaskTime = finalOffTaskMin;
+              last.promptCount = summary.promptCount;
+              // sessionDuration is captured from the closure above (elapsed seconds)
+              last.onTaskRate  = sessionDuration > 0
+                ? Math.round(Math.max(0, 100 - (finalOffTaskSec / sessionDuration) * 100))
+                : 100;
+              localStorage.setItem("taskguard_sessions", JSON.stringify(saved));
+
+              // Update the panel with the accurate final numbers
+              setLastSession({
+                onTaskRate:     last.onTaskRate,
+                tabSwitches:    last.tabSwitches,
+                offTaskSeconds: finalOffTaskSec, // raw seconds from background.js summary
+                duration:       sessionDuration,
+              });
+            }
+          }
+          window.removeEventListener("taskguard:stopped", patchOnStop);
+        };
+        window.addEventListener("taskguard:stopped", patchOnStop);
+      }
+
+      // Signal extension to stop — content.js forwards to background.js,
+      // which flushes final dwell time, saves to chrome.storage.local,
+      // and fires taskguard:stopped with the summary.
+      extensionStop();
+
     } else {
       setShowGoalPrompt(true);
     }
-  }, [isRunning, duration, timeLeft, tabSwitches, offTaskTime, sessionGoal, mode, extensionStop]);
+  }, [isRunning, duration, timeLeft, tabSwitches, offTaskTime, sessionGoal, mode, extensionStop, extensionReady]);
 
   const handleGoalSubmit = () => startSession();
 
@@ -332,6 +447,16 @@ export default function SessionPage() {
     settings.monitoredSites = distractionSites;
     localStorage.setItem("taskguard_settings", JSON.stringify(settings));
     localStorage.setItem("taskguard_classified", "true");
+
+    // Sync the classified domains to the extension immediately so background.js
+    // uses them from the very first session (same bridge used by SettingsPage).
+    const distractingDomains = distractionSites.map((s) => s.domain);
+    window.dispatchEvent(
+      new CustomEvent("taskguard:updateDomains", {
+        detail: { domains: distractingDomains },
+      })
+    );
+
     setShowClassificationWizard(false);
   };
 
@@ -766,10 +891,12 @@ export default function SessionPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="flex flex-col gap-1">
                       <span className="text-[28px] font-light" style={{ color: "#f5f0e8" }}>{tabSwitches}</span>
-                      <span className="text-[10px] font-mono" style={{ color: "rgba(245,240,232,0.35)" }}>tab switches</span>
+                      <span className="text-[10px] font-mono" style={{ color: "rgba(245,240,232,0.35)" }}>distracting visits</span>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <span className="text-[28px] font-light" style={{ color: "#f5f0e8" }}>{offTaskTime}m</span>
+                      <span className="text-[28px] font-light" style={{ color: "#f5f0e8" }}>
+                        {offTaskSeconds < 60 ? `${offTaskSeconds}s` : `${offTaskTime}m`}
+                      </span>
                       <span className="text-[10px] font-mono" style={{ color: "rgba(245,240,232,0.35)" }}>off-task</span>
                     </div>
                   </div>
@@ -811,17 +938,25 @@ export default function SessionPage() {
                         <span className="text-[10px] font-mono" style={{ color: "rgba(245,240,232,0.35)" }}>on-task rate</span>
                       </div>
                       <div className="flex flex-col gap-1 items-end" style={{ color: "rgba(245,240,232,0.35)" }}>
-                        <span className="text-[11px] font-mono">{lastSession.duration}m session</span>
+                        <span className="text-[11px] font-mono">
+                          {lastSession.duration < 60
+                            ? `${lastSession.duration}s`
+                            : `${Math.floor(lastSession.duration / 60)}m`} session
+                        </span>
                       </div>
                     </div>
                     <div className="h-px w-full" style={{ backgroundColor: "rgba(245,240,232,0.08)" }} />
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex flex-col gap-1">
                         <span className="text-[20px] font-light" style={{ color: "rgba(245,240,232,0.7)" }}>{lastSession.tabSwitches}</span>
-                        <span className="text-[10px] font-mono" style={{ color: "rgba(245,240,232,0.3)" }}>tab switches</span>
+                        <span className="text-[10px] font-mono" style={{ color: "rgba(245,240,232,0.3)" }}>distracting visits</span>
                       </div>
                       <div className="flex flex-col gap-1">
-                        <span className="text-[20px] font-light" style={{ color: "rgba(245,240,232,0.7)" }}>{lastSession.offTaskMinutes}m</span>
+                        <span className="text-[20px] font-light" style={{ color: "rgba(245,240,232,0.7)" }}>
+                          {lastSession.offTaskSeconds < 60
+                            ? `${lastSession.offTaskSeconds}s`
+                            : `${Math.floor(lastSession.offTaskSeconds / 60)}m`}
+                        </span>
                         <span className="text-[10px] font-mono" style={{ color: "rgba(245,240,232,0.3)" }}>off-task</span>
                       </div>
                     </div>

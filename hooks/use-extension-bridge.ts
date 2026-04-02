@@ -14,7 +14,7 @@ interface UseExtensionBridge {
   extensionReady: boolean;
   sessionActive:  boolean;
   status:         ExtensionStatus | null;
-  startSession:   () => void;
+  startSession:   (mode?: string) => void;
   stopSession:    () => void;
 }
 
@@ -66,8 +66,8 @@ export function useExtensionBridge(): UseExtensionBridge {
     };
   }, []);
 
-  const startSession = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("taskguard:start"));
+  const startSession = useCallback((mode: string = "strict") => {
+    window.dispatchEvent(new CustomEvent("taskguard:start", { detail: { mode } }));
   }, []);
 
   const stopSession = useCallback(() => {
