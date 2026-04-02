@@ -90,7 +90,7 @@ export default function SessionPage() {
   
   // Last session stats - loaded from localStorage
   const [lastSession, setLastSession] = useState<{
-    focusScore: number;
+    onTaskRate: number;
     tabSwitches: number;
     offTaskMinutes: number;
     duration: number;
@@ -132,7 +132,7 @@ export default function SessionPage() {
           // Load most recent session
           const recent = parsed[parsed.length - 1];
           setLastSession({
-            focusScore: recent.focusScore || 0,
+            onTaskRate: recent.onTaskRate ?? 0,
             tabSwitches: recent.tabSwitches || 0,
             offTaskMinutes: recent.offTaskTime || 0,
             duration: Math.floor((recent.duration || 0) / 60),
@@ -228,7 +228,7 @@ export default function SessionPage() {
           sessions.push({
             date: new Date().toISOString(),
             duration: duration * 60,
-            focusScore: Math.max(0, 100 - (tabSwitches * 3) - (offTaskTime * 2)),
+            onTaskRate: Math.round(Math.max(0, 100 - (offTaskTime / duration) * 100)),
             tabSwitches,
             offTaskTime,
             goal: sessionGoal,
@@ -297,7 +297,7 @@ export default function SessionPage() {
       sessions.push({
         date: new Date().toISOString(),
         duration: duration * 60 - timeLeft,
-        focusScore: Math.max(0, 100 - (tabSwitches * 3) - (offTaskTime * 2)),
+        onTaskRate: Math.round(Math.max(0, 100 - (offTaskTime / duration) * 100)),
         tabSwitches,
         offTaskTime,
         goal: sessionGoal,
@@ -1141,13 +1141,13 @@ export default function SessionPage() {
                           className="text-[36px] font-light leading-none"
                           style={{ color: "rgba(245, 240, 232, 0.9)" }}
                         >
-                          {lastSession.focusScore}%
+                          {lastSession.onTaskRate}%
                         </span>
                         <span
                           className="text-[10px] font-mono"
                           style={{ color: "rgba(245, 240, 232, 0.35)" }}
                         >
-                          focus score
+                          on-task rate
                         </span>
                       </div>
                       <div
