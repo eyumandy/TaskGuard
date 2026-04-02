@@ -8,7 +8,7 @@ import { AppHeader } from "@/components/app-header";
 interface Session {
   date: string;
   duration: number;
-  focusScore: number;
+  onTaskRate: number;
   tabSwitches: number;
   offTaskTime: number;
   goal: string;
@@ -79,7 +79,7 @@ export default function HistoryPage() {
       const daySessions = sessionsByDate.get(dateStr) || [];
       const sessionCount = daySessions.length;
       const avgFocus = sessionCount > 0 
-        ? Math.round(daySessions.reduce((acc, s) => acc + s.focusScore, 0) / sessionCount)
+        ? Math.round(daySessions.reduce((acc, s) => acc + s.onTaskRate, 0) / sessionCount)
         : 0;
 
       data.push({ date: dateStr, sessions: sessionCount, avgFocus });
@@ -153,7 +153,7 @@ export default function HistoryPage() {
   const stats = useMemo(() => {
     const totalSessions = sessions.length;
     const avgFocus = totalSessions > 0
-      ? Math.round(sessions.reduce((acc, s) => acc + s.focusScore, 0) / totalSessions)
+      ? Math.round(sessions.reduce((acc, s) => acc + s.onTaskRate, 0) / totalSessions)
       : 0;
     
     // Calculate time this week
@@ -431,7 +431,7 @@ export default function HistoryPage() {
                     {stats.avgFocus}%
                   </span>
                   <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: "rgba(245, 240, 232, 0.35)" }}>
-                    Avg Focus
+                    Avg On-Task Rate
                   </span>
                 </div>
                 <div
@@ -478,10 +478,10 @@ export default function HistoryPage() {
                         <span
                           className="block text-[14px] font-mono tabular-nums"
                           style={{
-                            color: session.focusScore >= 85 ? "rgba(134, 239, 172, 0.9)" : session.focusScore >= 70 ? "rgba(245, 240, 232, 0.7)" : "rgba(252, 165, 165, 0.8)",
+                            color: session.onTaskRate >= 85 ? "rgba(134, 239, 172, 0.9)" : session.onTaskRate >= 70 ? "rgba(245, 240, 232, 0.7)" : "rgba(252, 165, 165, 0.8)",
                           }}
                         >
-                          {session.focusScore}%
+                          {session.onTaskRate}%
                         </span>
                       </div>
                       <div className="text-right w-8">

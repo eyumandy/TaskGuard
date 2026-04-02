@@ -36,7 +36,7 @@ export function AppHeader({ currentPage, userInitials }: AppHeaderProps) {
           alt="TaskGuard"
           width={100}
           height={28}
-          className="h-5 sm:h-6 w-auto"
+          className="h-5 sm:h-10 w-auto"
           style={{ filter: "brightness(0) invert(1)", opacity: 0.85 }}
         />
       </Link>

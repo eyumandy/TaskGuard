@@ -90,7 +90,7 @@ export default function SessionPage() {
   
   // Last session stats - loaded from localStorage
   const [lastSession, setLastSession] = useState<{
-    focusScore: number;
+    onTaskRate: number;
     tabSwitches: number;
     offTaskMinutes: number;
     duration: number;
@@ -132,7 +132,7 @@ export default function SessionPage() {
           // Load most recent session
           const recent = parsed[parsed.length - 1];
           setLastSession({
-            focusScore: recent.focusScore || 0,
+            onTaskRate: recent.onTaskRate ?? 0,
             tabSwitches: recent.tabSwitches || 0,
             offTaskMinutes: recent.offTaskTime || 0,
             duration: Math.floor((recent.duration || 0) / 60),
@@ -228,7 +228,7 @@ export default function SessionPage() {
           sessions.push({
             date: new Date().toISOString(),
             duration: duration * 60,
-            focusScore: Math.max(0, 100 - (tabSwitches * 3) - (offTaskTime * 2)),
+            onTaskRate: Math.round(Math.max(0, 100 - (offTaskTime / duration) * 100)),
             tabSwitches,
             offTaskTime,
             goal: sessionGoal,
@@ -297,7 +297,7 @@ export default function SessionPage() {
       sessions.push({
         date: new Date().toISOString(),
         duration: duration * 60 - timeLeft,
-        focusScore: Math.max(0, 100 - (tabSwitches * 3) - (offTaskTime * 2)),
+        onTaskRate: Math.round(Math.max(0, 100 - (offTaskTime / duration) * 100)),
         tabSwitches,
         offTaskTime,
         goal: sessionGoal,
@@ -381,6 +381,43 @@ export default function SessionPage() {
       className="min-h-screen flex flex-col px-4 sm:px-6 lg:px-12 py-4 sm:py-6 relative"
       style={{ backgroundColor: "#070707" }}
     >
+      {/*
+        ── Ambient mode glow ──────────────────────────────────────────────
+        Three radial gradient layers, one per mode, stacked absolutely
+        behind all content. Opacity transitions handle the crossfade when
+        the user switches modes — CSS `background` can't transition between
+        gradient values, so we transition `opacity` instead.
+
+        Positioned at 50% 52% so the bloom sits dead-center on the timer.
+        pointer-events: none ensures it never captures clicks.
+      */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 0 }}>
+        {/* Focus — warm cream white */}
+        <div
+          className="absolute inset-0 transition-opacity duration-700 ease-in-out"
+          style={{
+            opacity: mode === "focus" ? 1 : 0,
+            background: "radial-gradient(ellipse 720px 520px at 50% 52%, rgba(245,240,232,0.09) 0%, rgba(245,240,232,0.03) 45%, transparent 70%)",
+          }}
+        />
+        {/* Strict — amber gold */}
+        <div
+          className="absolute inset-0 transition-opacity duration-700 ease-in-out"
+          style={{
+            opacity: mode === "strict" ? 1 : 0,
+            background: "radial-gradient(ellipse 720px 520px at 50% 52%, rgba(217,158,68,0.13) 0%, rgba(217,158,68,0.04) 45%, transparent 70%)",
+          }}
+        />
+        {/* Zen — sky blue */}
+        <div
+          className="absolute inset-0 transition-opacity duration-700 ease-in-out"
+          style={{
+            opacity: mode === "zen" ? 1 : 0,
+            background: "radial-gradient(ellipse 720px 520px at 50% 52%, rgba(96,165,250,0.11) 0%, rgba(96,165,250,0.03) 45%, transparent 70%)",
+          }}
+        />
+      </div>
+
       {/* Onboarding Modal */}
       {showOnboarding && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -1141,13 +1178,13 @@ export default function SessionPage() {
                           className="text-[36px] font-light leading-none"
                           style={{ color: "rgba(245, 240, 232, 0.9)" }}
                         >
-                          {lastSession.focusScore}%
+                          {lastSession.onTaskRate}%
                         </span>
                         <span
                           className="text-[10px] font-mono"
                           style={{ color: "rgba(245, 240, 232, 0.35)" }}
                         >
-                          focus score
+                          on-task rate
                         </span>
                       </div>
                       <div

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 const ASCII_CHARS = " .,:;|!ilIwWMB#@";
 const CELL_WIDTH = 7;
@@ -24,7 +24,6 @@ interface WaterParams {
   surfaceTension: number;
   hoverRadius: number;
   clickRadius: number;
-  audioVolume: number;
 }
 
 const DEFAULT_PARAMS: WaterParams = {
@@ -36,103 +35,7 @@ const DEFAULT_PARAMS: WaterParams = {
   surfaceTension: 0.92,
   hoverRadius: 3,
   clickRadius: 5,
-  audioVolume: 0.5,
 };
-
-function createAudioContext() {
-  if (typeof window === "undefined") return null;
-  try {
-    return new (window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext })
-        .webkitAudioContext)();
-  } catch {
-    return null;
-  }
-}
-
-function playDropSound(
-  audioCtx: AudioContext,
-  intensity: number = 1,
-  isClick: boolean = false,
-  volume: number = 0.5
-) {
-  try {
-    const now = audioCtx.currentTime;
-    const vol = volume * intensity;
-
-    const masterGain = audioCtx.createGain();
-    masterGain.gain.value = volume;
-    masterGain.connect(audioCtx.destination);
-
-    const osc1 = audioCtx.createOscillator();
-    const gain1 = audioCtx.createGain();
-    osc1.type = "sine";
-    osc1.frequency.setValueAtTime(isClick ? 220 : 400, now);
-    osc1.frequency.exponentialRampToValueAtTime(
-      isClick ? 60 : 120,
-      now + (isClick ? 0.4 : 0.15)
-    );
-    gain1.gain.setValueAtTime(
-      Math.min(0.12 * vol, isClick ? 0.18 : 0.08),
-      now
-    );
-    gain1.gain.exponentialRampToValueAtTime(
-      0.001,
-      now + (isClick ? 0.5 : 0.15)
-    );
-    osc1.connect(gain1);
-    gain1.connect(masterGain);
-    osc1.start(now);
-    osc1.stop(now + (isClick ? 0.5 : 0.2));
-
-    const bufferSize = audioCtx.sampleRate * (isClick ? 0.3 : 0.08);
-    const noiseBuffer = audioCtx.createBuffer(
-      1,
-      bufferSize,
-      audioCtx.sampleRate
-    );
-    const noiseData = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      noiseData[i] = (Math.random() * 2 - 1) * Math.exp((-i / bufferSize) * 4);
-    }
-    const noiseSource = audioCtx.createBufferSource();
-    noiseSource.buffer = noiseBuffer;
-    const noiseGain = audioCtx.createGain();
-    noiseGain.gain.setValueAtTime(isClick ? 0.06 * vol : 0.02 * vol, now);
-    noiseGain.gain.exponentialRampToValueAtTime(
-      0.001,
-      now + (isClick ? 0.3 : 0.08)
-    );
-
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = "bandpass";
-    filter.frequency.value = isClick ? 800 : 2000;
-    filter.Q.value = isClick ? 1 : 3;
-
-    noiseSource.connect(filter);
-    filter.connect(noiseGain);
-    noiseGain.connect(masterGain);
-    noiseSource.start(now);
-    noiseSource.stop(now + (isClick ? 0.4 : 0.1));
-
-    if (isClick) {
-      const osc2 = audioCtx.createOscillator();
-      const gain2 = audioCtx.createGain();
-      osc2.type = "sine";
-      osc2.frequency.setValueAtTime(600, now + 0.05);
-      osc2.frequency.exponentialRampToValueAtTime(80, now + 0.35);
-      gain2.gain.setValueAtTime(0, now);
-      gain2.gain.linearRampToValueAtTime(0.08 * vol, now + 0.05);
-      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-      osc2.connect(gain2);
-      gain2.connect(masterGain);
-      osc2.start(now);
-      osc2.stop(now + 0.45);
-    }
-  } catch {
-    // Audio not supported
-  }
-}
 
 export default function AsciiWater() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -148,24 +51,10 @@ export default function AsciiWater() {
   const animFrameRef = useRef<number>(0);
   const imageLoadedRef = useRef(false);
   const imageSrcRef = useRef(DEFAULT_IMAGE);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const lastSoundTimeRef = useRef(0);
   const paramsRef = useRef<WaterParams>({ ...DEFAULT_PARAMS });
 
-  const [hasInteracted, setHasInteracted] = useState(false);
-  const [params, setParams] = useState<WaterParams>({ ...DEFAULT_PARAMS });
-
   useEffect(() => {
-    paramsRef.current = params;
-  }, [params]);
-
-  const initAudio = useCallback(() => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = createAudioContext();
-    }
-    if (audioCtxRef.current?.state === "suspended") {
-      audioCtxRef.current.resume();
-    }
+    paramsRef.current = paramsRef.current;
   }, []);
 
   const initFromImage = useCallback((src?: string) => {
@@ -508,42 +397,12 @@ export default function AsciiWater() {
             // Even when holding still, pulse gently
             addRipple(col, row, p.clickStrength * 0.08, Math.max(2, radius - 1));
           }
-
-          const now = performance.now();
-          if (
-            audioCtxRef.current &&
-            now - lastSoundTimeRef.current > 60 &&
-            speed > 2
-          ) {
-            lastSoundTimeRef.current = now;
-            playDropSound(
-              audioCtxRef.current,
-              Math.min(speed / 15, 0.6),
-              true,
-              p.audioVolume * 0.4
-            );
-          }
         } else {
           // Normal hover: gentle ripple
           const strength = Math.min(speed * p.rippleStrength, 6);
 
           if (strength > 0.3) {
             addRipple(col, row, strength, p.hoverRadius);
-
-            const now = performance.now();
-            if (
-              audioCtxRef.current &&
-              now - lastSoundTimeRef.current > 100 &&
-              speed > 4
-            ) {
-              lastSoundTimeRef.current = now;
-              playDropSound(
-                audioCtxRef.current,
-                Math.min(speed / 25, 0.4),
-                false,
-                p.audioVolume
-              );
-            }
           }
         }
       }
@@ -567,10 +426,6 @@ export default function AsciiWater() {
       const rect = canvas.getBoundingClientRect();
       mouseRef.current.x = e.clientX - rect.left;
       mouseRef.current.y = e.clientY - rect.top;
-      if (!hasInteracted) {
-        setHasInteracted(true);
-        initAudio();
-      }
     };
 
     const handleMouseLeave = () => {
@@ -583,8 +438,6 @@ export default function AsciiWater() {
 
     const handleMouseDown = (e: MouseEvent) => {
       mouseDownRef.current = true;
-      initAudio();
-      if (!hasInteracted) setHasInteracted(true);
 
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -595,10 +448,6 @@ export default function AsciiWater() {
 
       // Initial raindrop impact
       addRipple(col, row, p.clickStrength, p.clickRadius, false);
-
-      if (audioCtxRef.current) {
-        playDropSound(audioCtxRef.current, 1, true, p.audioVolume);
-      }
 
       // Staggered ring ripples for realistic raindrop
       setTimeout(() => {
@@ -626,8 +475,6 @@ export default function AsciiWater() {
 
     const handleTouchStart = (e: TouchEvent) => {
       mouseDownRef.current = true;
-      initAudio();
-      if (!hasInteracted) setHasInteracted(true);
       const touch = e.touches[0];
       const rect = canvas.getBoundingClientRect();
       const x = touch.clientX - rect.left;
@@ -641,10 +488,6 @@ export default function AsciiWater() {
       const row = Math.floor(y / CELL_HEIGHT);
       const p = paramsRef.current;
       addRipple(col, row, p.clickStrength, p.clickRadius, false);
-
-      if (audioCtxRef.current) {
-        playDropSound(audioCtxRef.current, 1, true, p.audioVolume);
-      }
 
       setTimeout(
         () =>
@@ -708,8 +551,6 @@ export default function AsciiWater() {
     initFromImage,
     animate,
     addRipple,
-    initAudio,
-    hasInteracted,
   ]);
 
   return (
