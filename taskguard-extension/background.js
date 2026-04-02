@@ -1,28 +1,3 @@
-/**
- * File: background.js
- * Location: taskguard-extension/background.js
- *
- * Purpose:
- *   Service worker for the TaskGuard Chrome Extension. Runs persistently
- *   in the background to track tab switches, classify domains as study-related
- *   or distracting, compute dwell time, and manage session state. All data
- *   is written to chrome.storage.local for consumption by the Next.js web app.
- *
- * Key Components:
- *   - SessionManager   : Start/stop session, track active state
- *   - TabTracker       : Listen to tab activation & URL changes
- *   - DomainClassifier : Classify domains as "study" or "distraction"
- *   - StorageManager   : Read/write session data to chrome.storage.local
- *   - MessageHandler   : Respond to messages from popup.js and content.js
- *
- * Authors: Whitnie Ojie-Ahamiojie, Rocco Tammone, Anthony Cao, Yumandy Espinosa
- * Created: 2026
- * Version: 1.0.0
- *
- * Dependencies:
- *   - Chrome Extension Manifest V3 APIs:
- *       chrome.tabs, chrome.storage, chrome.runtime, chrome.alarms
- */
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -543,3 +518,35 @@ async function restoreState() {
 
 // Run on service worker startup
 restoreState();
+
+// ─────────────────────────────────────────────────────────────
+// STORAGE CHANGE LISTENER
+// Allows the web app to start/stop sessions by writing to
+// chrome.storage.local directly. The popup reflects this change
+// automatically since it polls storage every second.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Watches for sessionActive changes written by the web app.
+ * When the web app sets sessionActive = true, the extension starts
+ * tracking. When it sets sessionActive = false, the session ends.
+ *
+ * This is the bridge between the web app and the extension —
+ * no extension ID or message passing required from the web app side.
+ */
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+
+  if (changes.sessionActive) {
+    const { newValue } = changes.sessionActive;
+    if (newValue === true && !state.sessionActive) {
+      console.log("[TaskGuard] Session started by web app.");
+      state.sessionActive = true;
+      state.sessionStart  = changes.sessionStart?.newValue || new Date().toISOString();
+      state.lastActiveTab = null;
+    } else if (newValue === false && state.sessionActive) {
+      console.log("[TaskGuard] Session ended by web app.");
+      endSession();
+    }
+  }
+});
