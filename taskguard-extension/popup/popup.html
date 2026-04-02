@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TaskGuard</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <!-- ── Header ───────────────────────────────────────────── -->
+  <header class="header">
+    <div class="logo">
+      <div class="logo-dot"></div>
+      <span class="logo-text">TaskGuard</span>
+    </div>
+    <!-- Live session indicator — hidden when no session active -->
+    <div class="session-badge" id="sessionBadge" hidden>
+      <span class="pulse-dot"></span>
+      <span>Live</span>
+    </div>
+  </header>
+
+  <!-- ── No Session State ──────────────────────────────────── -->
+  <div class="state-idle" id="stateIdle">
+    <p class="idle-title">Ready to focus?</p>
+    <p class="idle-sub">Start a session to begin tracking your study behavior.</p>
+  </div>
+
+  <!-- ── Active Session Stats ─────────────────────────────── -->
+  <div class="stats-grid" id="statsGrid" hidden>
+    <div class="stat-card">
+      <span class="stat-value" id="statTimer">00:00</span>
+      <span class="stat-label">Session Time</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value" id="statSwitches">0</span>
+      <span class="stat-label">Tab Switches</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value" id="statOffTask">0m</span>
+      <span class="stat-label">Off-Task</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value" id="statPrompts">0</span>
+      <span class="stat-label">Prompts</span>
+    </div>
+  </div>
+
+  <!-- ── Primary Action Button ────────────────────────────── -->
+  <div class="actions">
+    <button class="btn-primary" id="btnMain" disabled>
+      <span id="btnLabel">Start Session</span>
+    </button>
+  </div>
+
+  <!-- ── Footer link to web app ───────────────────────────── -->
+  <footer class="footer">
+    <a href="http://localhost:3000/session" target="_blank" class="footer-link" id="dashboardLink">
+      Open full dashboard →
+    </a>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>
