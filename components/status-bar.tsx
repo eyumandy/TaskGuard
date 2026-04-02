@@ -6,27 +6,17 @@ export function StatusBar() {
       <div 
         className="glass-subtle rounded-full mx-auto max-w-2xl px-6 py-2.5 flex items-center justify-between"
       >
-        {/* Status Indicators */}
+        {/* Live status indicator — no hardcoded metrics */}
         <div 
           className="flex items-center gap-6 text-[12px] font-mono"
           style={{ color: "rgba(245, 240, 232, 0.4)" }}
         >
-          <span>12 sessions</span>
-          <span 
-            className="w-px h-3" 
-            style={{ backgroundColor: "rgba(245, 240, 232, 0.15)" }}
-          />
-          <span>84% focus</span>
-          <span 
-            className="w-px h-3" 
-            style={{ backgroundColor: "rgba(245, 240, 232, 0.15)" }}
-          />
           <span className="flex items-center gap-2">
             <span 
               className="w-1.5 h-1.5 rounded-full animate-pulse-status"
               style={{ backgroundColor: "#4ade80" }}
             />
-            active
+            Chrome Extension
           </span>
         </div>
         

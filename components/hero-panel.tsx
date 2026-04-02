@@ -205,22 +205,12 @@ export function HeroPanel() {
             </Link>
           </div>
           
-          {/* Availability note */}
+          {/* Chrome-only note — project scope is Chrome extension */}
           <div 
             className="flex items-center gap-3 pt-2"
             style={{ color: "rgba(245, 240, 232, 0.2)" }}
           >
-            <div className="flex items-center gap-2">
-              {/* Firefox */}
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
-              </svg>
-              {/* Edge */}
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
-              </svg>
-            </div>
-            <span className="text-[11px] font-mono">Also on Firefox & Edge</span>
+            <span className="text-[11px] font-mono">Chrome only · HCI Course Demo</span>
           </div>
         </div>
       </main>
