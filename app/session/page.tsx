@@ -381,6 +381,43 @@ export default function SessionPage() {
       className="min-h-screen flex flex-col px-4 sm:px-6 lg:px-12 py-4 sm:py-6 relative"
       style={{ backgroundColor: "#070707" }}
     >
+      {/*
+        ── Ambient mode glow ──────────────────────────────────────────────
+        Three radial gradient layers, one per mode, stacked absolutely
+        behind all content. Opacity transitions handle the crossfade when
+        the user switches modes — CSS `background` can't transition between
+        gradient values, so we transition `opacity` instead.
+
+        Positioned at 50% 52% so the bloom sits dead-center on the timer.
+        pointer-events: none ensures it never captures clicks.
+      */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 0 }}>
+        {/* Focus — warm cream white */}
+        <div
+          className="absolute inset-0 transition-opacity duration-700 ease-in-out"
+          style={{
+            opacity: mode === "focus" ? 1 : 0,
+            background: "radial-gradient(ellipse 720px 520px at 50% 52%, rgba(245,240,232,0.09) 0%, rgba(245,240,232,0.03) 45%, transparent 70%)",
+          }}
+        />
+        {/* Strict — amber gold */}
+        <div
+          className="absolute inset-0 transition-opacity duration-700 ease-in-out"
+          style={{
+            opacity: mode === "strict" ? 1 : 0,
+            background: "radial-gradient(ellipse 720px 520px at 50% 52%, rgba(217,158,68,0.13) 0%, rgba(217,158,68,0.04) 45%, transparent 70%)",
+          }}
+        />
+        {/* Zen — sky blue */}
+        <div
+          className="absolute inset-0 transition-opacity duration-700 ease-in-out"
+          style={{
+            opacity: mode === "zen" ? 1 : 0,
+            background: "radial-gradient(ellipse 720px 520px at 50% 52%, rgba(96,165,250,0.11) 0%, rgba(96,165,250,0.03) 45%, transparent 70%)",
+          }}
+        />
+      </div>
+
       {/* Onboarding Modal */}
       {showOnboarding && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">

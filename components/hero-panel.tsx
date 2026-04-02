@@ -1,10 +1,19 @@
 "use client";
 
+/**
+ * File: hero-panel.tsx
+ * Purpose: Left panel of the landing page containing branding, tagline,
+ *          and secondary CTAs (Create Account / Sign In).
+ *          The primary "Add to Chrome" CTA lives in the fixed bottom-right
+ *          floating button defined in page.tsx.
+ * Author: TaskGuard Team
+ * Dependencies: react, next/link
+ */
+
 import { useState, useEffect } from "react";
 import Link from "next/link";
 
 export function HeroPanel() {
-  const [primaryHovered, setPrimaryHovered] = useState(false);
   const [createHovered, setCreateHovered] = useState(false);
   const [signInHovered, setSignInHovered] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -29,14 +38,14 @@ export function HeroPanel() {
 
       {/* Nav */}
       <nav 
-        className={` relative z-10 flex items-center justify-between transition-all duration-700 ease-out ${
+        className={`pt-5 relative z-10 flex items-center justify-between transition-all duration-700 ease-out ${
           mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
         }`}
       >
         <img 
           src="/images/logo.png" 
           alt="TaskGuard" 
-          className="h-6 lg:h-10 w-auto"
+          className="h-10 lg:h-10 w-auto"
           style={{ 
             filter: "brightness(0) invert(1)",
             opacity: 0.9
@@ -104,48 +113,6 @@ export function HeroPanel() {
           }`}
           style={{ transitionDelay: '500ms' }}
         >
-          {/* Primary: Chrome CTA - Premium design */}
-          <button
-            className="group relative flex items-center justify-center gap-3 h-14 px-8 text-[15px] font-medium rounded-2xl transition-all duration-300 overflow-hidden"
-            style={{ 
-              backgroundColor: primaryHovered ? "#ffffff" : "#f5f0e8",
-              color: "#0a0a0a",
-              boxShadow: primaryHovered 
-                ? "0 8px 32px rgba(245, 240, 232, 0.25), 0 0 0 1px rgba(245, 240, 232, 0.1)" 
-                : "0 4px 16px rgba(245, 240, 232, 0.1)",
-              transform: primaryHovered ? "translateY(-2px)" : "translateY(0)",
-            }}
-            onMouseEnter={() => setPrimaryHovered(true)}
-            onMouseLeave={() => setPrimaryHovered(false)}
-          >
-            {/* Chrome icon - colored */}
-            <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" fill="#4285F4"/>
-              <path d="M12 7a5 5 0 0 1 4.33 2.5l4.33-2.5A10 10 0 0 0 12 2a10 10 0 0 0-8.66 5l4.33 2.5A5 5 0 0 1 12 7z" fill="#EA4335"/>
-              <path d="M7.67 9.5L3.34 7A10 10 0 0 0 2 12c0 2.12.66 4.09 1.78 5.71l4.14-4.14A5 5 0 0 1 7.67 9.5z" fill="#FBBC05"/>
-              <path d="M12 17a5 5 0 0 1-4.08-2.12l-4.14 4.14A10 10 0 0 0 12 22a10 10 0 0 0 8.66-5l-4.33-2.5A5 5 0 0 1 12 17z" fill="#34A853"/>
-              <circle cx="12" cy="12" r="3" fill="white"/>
-            </svg>
-            <span className="flex items-center gap-2">
-              Add to Chrome
-              <span 
-                className="text-[12px] px-2 py-0.5 rounded-full"
-                style={{ backgroundColor: "rgba(0, 0, 0, 0.08)" }}
-              >
-                Free
-              </span>
-            </span>
-            {/* Shine effect on hover */}
-            <div 
-              className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-              style={{
-                background: "linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.4) 50%, transparent 60%)",
-                transform: "translateX(-100%)",
-                animation: primaryHovered ? "shine 0.6s ease-out forwards" : "none",
-              }}
-            />
-          </button>
-
           {/* Secondary Row: Sign Up & Log In */}
           <div className="flex items-center gap-3">
             <Link
@@ -205,12 +172,16 @@ export function HeroPanel() {
             </Link>
           </div>
           
-          {/* Chrome-only note — project scope is Chrome extension */}
-          <div 
-            className="flex items-center gap-3 pt-2"
+          {/* Chrome-only note */}
+          <div
+            className="flex items-center gap-2 pt-1"
             style={{ color: "rgba(245, 240, 232, 0.2)" }}
           >
-            <span className="text-[11px] font-mono">Chrome only · HCI Course Demo</span>
+            <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="M12 8v4l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            <span className="text-[11px] font-mono tracking-wide">Chrome extension only</span>
           </div>
         </div>
       </main>
