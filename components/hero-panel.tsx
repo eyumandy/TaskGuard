@@ -29,14 +29,14 @@ export function HeroPanel() {
 
       {/* Nav */}
       <nav 
-        className={`relative z-10 flex items-center justify-between transition-all duration-700 ease-out ${
+        className={` relative z-10 flex items-center justify-between transition-all duration-700 ease-out ${
           mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
         }`}
       >
         <img 
           src="/images/logo.png" 
           alt="TaskGuard" 
-          className="h-6 lg:h-7 w-auto"
+          className="h-6 lg:h-10 w-auto"
           style={{ 
             filter: "brightness(0) invert(1)",
             opacity: 0.9
