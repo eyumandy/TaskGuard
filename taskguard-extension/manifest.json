@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "TaskGuard",
+  "version": "1.0.0",
+  "description": "Behavior-aware browser extension for reducing task switching during academic study sessions.",
+
+  "permissions": [
+    "tabs",
+    "storage",
+    "scripting",
+    "alarms",
+    "webNavigation"
+  ],
+
+  "host_permissions": ["<all_urls>"],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "48":  "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "externally_connectable": {
+    "matches": ["http://localhost:3000/*"]
+  },
+
+  "icons": {
+    "16":  "icons/icon16.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
