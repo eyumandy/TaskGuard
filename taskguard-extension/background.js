@@ -1,4 +1,3 @@
-
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
@@ -50,9 +49,12 @@ const STORAGE_KEYS = {
 
 let state = {
   sessionActive: false,
-  sessionStart: null,       // Date object
-  lastActiveTab: null,      // { tabId, domain, timestamp }
+  sessionStart: null,        // Date object
+  lastActiveTab: null,       // { tabId, domain, timestamp }
   distractingDomains: [...DEFAULT_DISTRACTING_DOMAINS],
+  pendingOverlay: null,      // { tabId, domain } | null
+  sessionMode: "strict",     // "focus" | "strict" | "zen"
+  // zen = track silently, no overlay; focus/strict = show overlay
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -176,13 +178,15 @@ async function appendEvent(event) {
  * if a duration is specified.
  *
  * @param {number} [durationMinutes=0] - Auto-end after N minutes; 0 = no auto-end
+ * @param {string} [mode="strict"]     - Session mode: "focus" | "strict" | "zen"
  * @returns {Promise<void>}
  */
-async function startSession(durationMinutes = 0) {
+async function startSession(durationMinutes = 0, mode = "strict") {
   const startTime = now();
   state.sessionActive = true;
   state.sessionStart = startTime;
   state.lastActiveTab = null;
+  state.sessionMode = mode; // store for use in handleTabSwitch
 
   // Reset all session metrics in storage
   await storageSet({
@@ -199,6 +203,31 @@ async function startSession(durationMinutes = 0) {
   // Set auto-end alarm if duration provided
   if (durationMinutes > 0) {
     chrome.alarms.create("sessionEnd", { delayInMinutes: durationMinutes });
+  }
+
+  // Initialize tracking from whichever tab is already active.
+  // Without this, dwell time doesn't start until the first tab switch event —
+  // so a distracting tab that was open before the session started is invisible
+  // to the tracker, and the overlay never fires for it.
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeTab?.url) {
+      const activeDomain = extractDomain(activeTab.url);
+      if (activeDomain) {
+        state.lastActiveTab = { tabId: activeTab.id, domain: activeDomain, timestamp: startTime };
+        // Show overlay immediately if session is starting on a distracting site
+        if (isDistracting(activeDomain)) {
+          chrome.tabs.sendMessage(activeTab.id, {
+            type: "SHOW_DISTRACTION_PROMPT",
+            domain: activeDomain,
+          }).catch(() => {
+            // Tab may not have content script yet — safe to ignore
+          });
+        }
+      }
+    }
+  } catch {
+    // chrome.tabs.query can fail in restricted contexts — safe to ignore
   }
 
   console.log(`[TaskGuard] Session started at ${startTime}`);
@@ -256,6 +285,7 @@ async function endSession() {
 
   chrome.alarms.clear("sessionEnd");
   state.lastActiveTab = null;
+  state.pendingOverlay = null;
 
   console.log("[TaskGuard] Session ended:", summary);
   return summary;
@@ -301,11 +331,23 @@ async function handleTabSwitch(tabId, url) {
   // Ignore internal browser pages (chrome://, about:, etc.)
   if (!domain) return;
 
+  // Same domain — user navigated within the same site (e.g. clicking a
+  // YouTube video while already on YouTube, or following a link on a study
+  // site). Treat as continuous dwell, not a new visit.
+  //
+  // This also deduplicates the onCommitted + onUpdated double-fire that
+  // occurs when both listeners are registered for the same navigation:
+  // the second call arrives with the same domain so it exits here cleanly.
+  if (state.lastActiveTab?.domain === domain) return;
+
   // Flush dwell time for previous tab
   await flushDwellTime(timestamp);
 
-  // Increment tab switch counter (don't count the very first tab activation)
-  if (state.lastActiveTab !== null) {
+  // Only count a "tab switch" when the user navigates TO a distracting domain.
+  // Counting every tab activation is noisy and not meaningful — switching between
+  // two study tabs shouldn't penalize the user. The metric we care about is:
+  // "how many times did you pull up a distracting site this session?"
+  if (state.lastActiveTab !== null && isDistracting(domain)) {
     await storageIncrement(STORAGE_KEYS.TAB_SWITCHES);
   }
 
@@ -321,15 +363,34 @@ async function handleTabSwitch(tabId, url) {
   // Update last active tab in memory
   state.lastActiveTab = { tabId, domain, timestamp };
 
-  // Notify content.js to show distraction overlay if needed
-  if (isDistracting(domain)) {
+  // Notify content.js to show distraction overlay if needed.
+  //
+  // Zen mode tracks silently — no overlay, no interruption. The visit counter
+  // and off-task time still accumulate so the dashboard shows real stats.
+  // Focus and Strict both show the overlay (identical behaviour for now).
+  //
+  // Root cause of the "popup lost" bug:
+  //   onCommitted fires at navigation COMMIT time — before the new page
+  //   loads and content.js is injected. sendMessage therefore fails silently.
+  //   onUpdated fires after the page is fully loaded (content.js ready), but
+  //   the same-domain guard returns early before reaching this code.
+  //
+  // Fix: set pendingOverlay now, attempt sendMessage immediately (succeeds for
+  // tab switches where content.js is already loaded), and clear it on success.
+  // onUpdated watches for pendingOverlay and retries once the page finishes
+  // loading — without going through handleTabSwitch (no double counting).
+  if (isDistracting(domain) && state.sessionMode !== "zen") {
+    state.pendingOverlay = { tabId, domain };
     try {
       await chrome.tabs.sendMessage(tabId, {
         type: "SHOW_DISTRACTION_PROMPT",
         domain,
       });
+      // Success: content.js was already loaded (tab switch, not URL change)
+      state.pendingOverlay = null;
     } catch {
-      // Tab may not have content script loaded yet — safe to ignore
+      // sendMessage failed: content.js not injected yet (page still loading).
+      // Leave pendingOverlay set — onUpdated will retry after page load.
     }
   }
 }
@@ -373,17 +434,39 @@ chrome.webNavigation
   : null;
 
 /**
- * Fires when a tab's URL is updated (fallback if webNavigation unavailable).
+ * Fires when a tab finishes loading (status: "complete").
+ *
+ * We no longer call handleTabSwitch from here — that caused double-counting
+ * alongside onCommitted. Instead this listener has one job: retry a pending
+ * overlay for in-tab URL changes where sendMessage failed earlier because
+ * content.js wasn't injected yet when onCommitted fired.
+ *
+ * Tab switches (onActivated) and URL changes (onCommitted) both call
+ * handleTabSwitch for state/counting. This listener ONLY handles the case
+ * where the overlay send needs to be deferred until the page is loaded.
  */
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== "complete" || !tab.url) return;
-  try {
-    const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (activeTabs[0]?.id === tabId) {
-      await handleTabSwitch(tabId, tab.url);
+  if (!state.sessionActive) return;
+
+  // Check if there's a pending overlay for this exact tab + domain.
+  // If so, content.js is now loaded — retry the send.
+  if (
+    state.pendingOverlay?.tabId === tabId &&
+    state.pendingOverlay?.domain === extractDomain(tab.url)
+  ) {
+    try {
+      const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTabs[0]?.id === tabId) {
+        await chrome.tabs.sendMessage(tabId, {
+          type: "SHOW_DISTRACTION_PROMPT",
+          domain: state.pendingOverlay.domain,
+        });
+        state.pendingOverlay = null;
+      }
+    } catch (err) {
+      console.warn("[TaskGuard] onUpdated overlay retry failed:", err);
     }
-  } catch (err) {
-    console.warn("[TaskGuard] onUpdated error:", err);
   }
 });
 
@@ -423,7 +506,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       case "START_SESSION": {
         await loadUserDomains(); // Refresh domain list before starting
-        await startSession(message.durationMinutes || 0);
+        await startSession(message.durationMinutes || 0, message.mode || "strict");
         sendResponse({ success: true });
         break;
       }
@@ -442,12 +525,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           STORAGE_KEYS.OFF_TASK_TIME,
           STORAGE_KEYS.PROMPT_COUNT,
         ]);
+
+        // BUG FIX: flushDwellTime() only runs on the NEXT tab switch, so
+        // offTaskTime in storage is stale while the user is actively sitting
+        // on a distracting site. Calculate the in-progress dwell right now
+        // and add it to the stored value so the web app gets a live counter.
+        //
+        // The web app polls GET_STATUS every 2 seconds, so this gives a
+        // continuously updating off-task time without needing a storage write
+        // on every poll tick.
+        let realtimeDwell = 0;
+        if (
+          state.sessionActive &&
+          state.lastActiveTab &&
+          isDistracting(state.lastActiveTab.domain)
+        ) {
+          realtimeDwell = elapsedSeconds(state.lastActiveTab.timestamp, now());
+        }
+
         sendResponse({
-          sessionActive:  result[STORAGE_KEYS.SESSION_ACTIVE] || false,
-          sessionStart:   result[STORAGE_KEYS.SESSION_START]  || null,
-          tabSwitches:    result[STORAGE_KEYS.TAB_SWITCHES]   || 0,
-          offTaskTime:    result[STORAGE_KEYS.OFF_TASK_TIME]  || 0,
-          promptCount:    result[STORAGE_KEYS.PROMPT_COUNT]   || 0,
+          sessionActive: result[STORAGE_KEYS.SESSION_ACTIVE] || false,
+          sessionStart:  result[STORAGE_KEYS.SESSION_START]  || null,
+          tabSwitches:   result[STORAGE_KEYS.TAB_SWITCHES]   || 0,
+          offTaskTime:   (result[STORAGE_KEYS.OFF_TASK_TIME] || 0) + realtimeDwell,
+          promptCount:   result[STORAGE_KEYS.PROMPT_COUNT]   || 0,
         });
         break;
       }

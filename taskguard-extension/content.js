@@ -1,4 +1,3 @@
-
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
@@ -345,11 +344,17 @@ window.dispatchEvent(new CustomEvent("taskguard:ready"));
 
 /**
  * Listens for the web app's Start Session button.
- * Forwards START_SESSION to background.js, then fires taskguard:started
- * back to the web app so it can update its own UI state.
+ * Forwards START_SESSION to background.js including the session mode, then
+ * fires taskguard:started back to the web app so it can update its UI.
+ *
+ * @param {CustomEvent} e - detail: { mode: "focus" | "strict" | "zen" }
+ *   mode  Controls overlay behaviour in background.js:
+ *         "focus" / "strict" → show distraction overlay
+ *         "zen"              → silent tracking only, no overlay
  */
-window.addEventListener("taskguard:start", () => {
-  chrome.runtime.sendMessage({ type: "START_SESSION" }, (response) => {
+window.addEventListener("taskguard:start", (e) => {
+  const mode = e.detail?.mode || "strict";
+  chrome.runtime.sendMessage({ type: "START_SESSION", mode }, (response) => {
     if (response?.success) {
       window.dispatchEvent(new CustomEvent("taskguard:started"));
     }
@@ -360,11 +365,18 @@ window.addEventListener("taskguard:start", () => {
  * Listens for the web app's Stop Session button.
  * Forwards END_SESSION to background.js, then fires taskguard:stopped
  * back to the web app so it can update its own UI state.
+ *
+ * The final session summary from background.js (containing accurate
+ * tabSwitches, offTaskTime, and promptCount after the last dwell flush)
+ * is passed as event detail so SessionPage can patch its localStorage
+ * entry with precise final values rather than the last-polled snapshot.
  */
 window.addEventListener("taskguard:stop", () => {
   chrome.runtime.sendMessage({ type: "END_SESSION" }, (response) => {
     if (response?.success) {
-      window.dispatchEvent(new CustomEvent("taskguard:stopped"));
+      window.dispatchEvent(new CustomEvent("taskguard:stopped", {
+        detail: response.summary ?? null,
+      }));
     }
   });
 });
@@ -380,5 +392,42 @@ window.addEventListener("taskguard:requestStatus", () => {
     window.dispatchEvent(
       new CustomEvent("taskguard:status", { detail: status })
     );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// DOMAIN SYNC BRIDGE
+// The Settings page cannot write to chrome.storage.local directly.
+// It dispatches taskguard:updateDomains; this script catches it and
+// writes the new list to chrome.storage.local so background.js picks
+// it up via loadUserDomains() at the next session start.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Listens for domain list updates from the web app's Settings page.
+ * Writes the new distracting-domain list to chrome.storage.local so
+ * background.js loadUserDomains() will use them on the next session.
+ *
+ * @listens taskguard:updateDomains
+ * @param {CustomEvent} e - detail: { domains: string[] }
+ *   domains  Array of root domain strings, e.g. ["youtube.com", "reddit.com"]
+ *            Contains ONLY sites the user classified as distracting (not productive).
+ *
+ * @fires taskguard:domainsUpdated  Fired after the write completes so the
+ *   Settings page can show a confirmation if needed.
+ *
+ * @example
+ * // Dispatched by SettingsPage saveSettings():
+ * window.dispatchEvent(new CustomEvent("taskguard:updateDomains", {
+ *   detail: { domains: ["youtube.com", "reddit.com"] }
+ * }));
+ */
+window.addEventListener("taskguard:updateDomains", (e) => {
+  const domains = e.detail?.domains;
+  if (!Array.isArray(domains)) return;
+
+  chrome.storage.local.set({ distractingDomains: domains }, () => {
+    console.log("[TaskGuard] distractingDomains synced:", domains);
+    window.dispatchEvent(new CustomEvent("taskguard:domainsUpdated"));
   });
 });

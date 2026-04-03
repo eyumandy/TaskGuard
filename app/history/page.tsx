@@ -471,7 +471,9 @@ export default function HistoryPage() {
                     <div className="flex items-center gap-6 sm:gap-8">
                       <div className="text-right">
                         <span className="block text-[14px] font-mono tabular-nums" style={{ color: "rgba(245, 240, 232, 0.6)" }}>
-                          {Math.floor(session.duration / 60)}m
+                          {session.duration < 60
+                            ? `${session.duration}s`
+                            : `${Math.floor(session.duration / 60)}m`}
                         </span>
                       </div>
                       <div className="text-right w-12">
@@ -484,7 +486,7 @@ export default function HistoryPage() {
                           {session.onTaskRate}%
                         </span>
                       </div>
-                      <div className="text-right w-8">
+                      <div className="text-right w-8" title="Distracting site visits">
                         <span className="block text-[14px] font-mono tabular-nums" style={{ color: "rgba(245, 240, 232, 0.4)" }}>
                           {session.tabSwitches}
                         </span>
