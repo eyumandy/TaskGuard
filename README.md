@@ -3,7 +3,7 @@
 > A behavior-aware browser extension and companion web app for reducing task-switching during academic study sessions.
 
 **University of Florida — HCI Course Project, Spring 2026**  
-Whitnie Ojie-Ahamiojie · Rocco Tammone · Anthony Cao · Yumandy Espinosa
+Whitnie Ojie-Ahamiojie · Rocco Tammone · Anthony Cao · Yumandy Espinosa · Kristian O'Connor
 
 ---
 
